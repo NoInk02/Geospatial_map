@@ -7,7 +7,6 @@ import io
 from fastapi.middleware.cors import CORSMiddleware
 import ffmpeg
 
-
 from dotenv import load_dotenv
 import os
 load_dotenv()
@@ -16,7 +15,6 @@ from opencage.geocoder import OpenCageGeocode
 
 key = os.getenv('GEOCODER_API_KEY')
 geocoder = OpenCageGeocode(key)
-
 
 import nltk
 from nltk.corpus import stopwords
