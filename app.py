@@ -28,9 +28,7 @@ target_actions = {
     "directions": ["find directions", "navigate", "directions"],
     "search": ["search", "look for"],
     "reset": ["reset","clear"],
-    "mark": ["mark","select","set pin","highlight"],
-    "switch": ["switch","change"]
-    #exit?
+    "switch": ["switch","change", "view"]
 }
 target_embeddings = {key: sentenceModel.encode(phrases) for key, phrases in target_actions.items()}
 
@@ -112,7 +110,8 @@ def load_wav(content):
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 torch_dtype = torch.float32
 
-model_id = "openai/whisper-small"
+model_id = "openai/whisper-small.en"
+
 
 model = AutoModelForSpeechSeq2Seq.from_pretrained(
     model_id, torch_dtype=torch_dtype, use_safetensors=True
@@ -129,6 +128,13 @@ pipe = pipeline(
     torch_dtype=torch_dtype,
     device=device,
 )
+map_types = ["osm", "street", "satellite"]
+def check_presence(sentence):
+    # Check if any map type is present and return the matched one
+    for map_type in map_types:
+        if map_type in sentence.lower():
+            return map_type  # Return True and the found map type
+    return None  # Return False if no map type is found
 
 # Define the API route for receiving a WAV file and returning the transcribed text
 @app.post("/transcribe/")
@@ -154,6 +160,7 @@ async def transcribe_audio(file: UploadFile = File(...)):
 
         places=[]
         coords=[]
+        best_match, similarity = get_best_match(result['text'])
         for entity in ner_results:
             # Check if the entity type is a location
             if entity['entity_group'] == 'LOC':
@@ -165,13 +172,21 @@ async def transcribe_audio(file: UploadFile = File(...)):
 
                     coords.append(location)
             else:
+                
+                
                 print(f"Skipping non-location entity: {entity['word']}")
-        best_match, similarity = get_best_match(result['text'])
-
-        if(len(places) == 0) :
-            return{"text": result["text"],"command":best_match}
+        
+        if(similarity>=0.2):
+            if(len(places) == 0) :
+                if(best_match=='switch' ):
+                    map_type = check_presence(result['text'])
+                    return{"text": result["text"],"command":best_match,"map_type":map_type}
+                return{"text": result["text"],"command":best_match}
+            
+            else:
+                return{"text": result["text"],"command":best_match,"coords":coords}
         else:
-            return{"text": result["text"],"command":best_match,"coords":coords}
+            return{"text":result['text'],"command":'invalid'}
      
     
     except Exception as e:
