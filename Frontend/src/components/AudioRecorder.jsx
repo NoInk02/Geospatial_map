@@ -105,7 +105,7 @@
 
 // export default AudioRecorder;
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, memo } from "react";
 import RecordRTC from "recordrtc";
 
 const AudioRecorder = ({ onTranscription }) => {
@@ -219,7 +219,13 @@ const AudioRecorder = ({ onTranscription }) => {
       const data = await response.json();
       console.log("✅ Transcription Result:", data);
 
-      onTranscription(data.transcription);
+      console.log("Calling onTranscription with: ", data);
+      if (onTranscription) {
+        console.log("Sending data to processVoiceCommand:", data);
+        onTranscription(data); // This should trigger processVoiceCommand in MapView
+      } else {
+        console.error("onTranscription is not defined");
+      }
     } catch (err) {
       console.error("❌ Error sending audio:", err);
       alert("Could not send audio. Check if the backend is running.");
@@ -244,8 +250,3 @@ const AudioRecorder = ({ onTranscription }) => {
 };
 
 export default AudioRecorder;
-
-
-
-
-
