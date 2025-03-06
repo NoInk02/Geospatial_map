@@ -112,7 +112,7 @@ def load_wav(content):
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 torch_dtype = torch.float32
 
-model_id = "openai/whisper-small.en"
+model_id = "distil-whisper/distil-medium.en"
 
 
 model = AutoModelForSpeechSeq2Seq.from_pretrained(
@@ -193,3 +193,15 @@ async def transcribe_audio(file: UploadFile = File(...)):
     
     except Exception as e:
         return {"error": str(e)}
+@app.on_event("shutdown")
+async def shutdown_event():
+    global model, pipe
+    try:
+        model.cpu()
+    except Exception as e:
+        print("Error moving model to CPU:", e)
+    finally:
+        del model
+        del pipe
+        torch.cuda.empty_cache()
+        print("Cleaned up CUDA resources.")
