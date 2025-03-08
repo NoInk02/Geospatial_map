@@ -1,15 +1,28 @@
+// import React from "react";
+// import MapView from "./components/MapView";
+// import SearchBar from "./components/SearchBar";
+
+// function App() {
+//   return (
+//     <div className="h-screen flex flex-col">
+//       {/* <header className="bg-blue-600 text-white p-4 text-center text-lg font-semibold">
+//         Geospatial Map UI
+//       </header> */}
+//       <SearchBar />
+//       {/* <MapView /> */}
+//     </div>
+//   );
+// }
+
+// export default App;
+
 import React from "react";
-import MapView from "./components/MapView";
 import SearchBar from "./components/SearchBar";
 
 function App() {
   return (
     <div className="h-screen flex flex-col">
-      {/* <header className="bg-blue-600 text-white p-4 text-center text-lg font-semibold">
-        Geospatial Map UI
-      </header> */}
       <SearchBar />
-      {/* <MapView /> */}
     </div>
   );
 }
