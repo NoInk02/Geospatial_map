@@ -31,7 +31,7 @@ function DirectionsSidebar({ directions, onClose, onClear }) {
           <p className="text-sm">{totalDistance} • {totalTime}</p>
         </div>
         <div className="flex space-x-2">
-          <button 
+          {/* <button 
             onClick={onClear}
             className="text-white hover:text-red-200"
             title="Clear directions"
@@ -48,7 +48,7 @@ function DirectionsSidebar({ directions, onClose, onClear }) {
                 clipRule="evenodd" 
               />
             </svg>
-          </button>
+          </button> */}
           <button 
             onClick={onClose}
             className="text-white hover:text-gray-200"

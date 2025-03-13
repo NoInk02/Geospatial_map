@@ -1,149 +1,33 @@
-
-
-// // MapView.jsx
-// import React, { useEffect, useState, useCallback, useRef } from "react";
-// import { MapContainer, TileLayer, Marker, Popup, useMap, ZoomControl } from "react-leaflet";
-// import "leaflet/dist/leaflet.css";
-// import L from "leaflet";
-// import "leaflet-routing-machine";
-
-// // Separate component to handle map operations
-// const MapController = ({ setProcessVoiceCommand }) => {
-//   const map = useMap();
-//   const [routingControl, setRoutingControl] = useState(null);
-//   const [currentLocation, setCurrentLocation] = useState(null);
-
-//   useEffect(() => {
-//     // Get user's location
-//     if (navigator.geolocation) {
-//       navigator.geolocation.getCurrentPosition(
-//         (position) => {
-//           const { latitude, longitude } = position.coords;
-//           setCurrentLocation([latitude, longitude]);
-//           map.setView([latitude, longitude], 13);
-//         },
-//         (error) => console.error("Error getting location:", error)
-//       );
-//     }
-//   }, [map]);
-
-//   const processVoiceCommand = useCallback(
-//     async (transcription) => {
-//       if (!transcription?.command) {
-//         console.warn("Invalid transcription:", transcription);
-//         return;
-//       }
-
-//       console.log("Processing command:", transcription.command);
-
-//       try {
-//         switch (transcription.command) {
-//           case "zoom_in":
-//             if (transcription.coords?.[0]) {
-//               map.setView(
-//                 [transcription.coords[0].lat, transcription.coords[0].lng],
-//                 map.getZoom()
-//               );
-//             }
-//             else {
-//               map.setZoom(map.getZoom() + 1);
-//             }
-//             break;
-
-//           case "zoom_out":
-//             map.setZoom(map.getZoom() - 1);
-//             break;
-
-//           case "search":
-//             if (transcription.coords?.[0]) {
-//               map.setView(
-//                 [transcription.coords[0].lat, transcription.coords[0].lng],
-//                 map.getZoom()
-//               );
-//             }
-//             break;
-
-//           case "directions":
-//             if (transcription.coords) {
-//               if (routingControl) routingControl.remove();
-
-//               const waypoints = transcription.coords.map(coord =>
-//                 L.latLng(coord.lat, coord.lng)
-//               );
-
-//               if (waypoints.length === 1 && currentLocation) {
-//                 waypoints.unshift(L.latLng(currentLocation[0], currentLocation[1]));
-//               }
-
-//               const newRoutingControl = L.Routing.control({
-//                 waypoints,
-//                 routeWhileDragging: true,
-//               }).addTo(map);
-
-//               setRoutingControl(newRoutingControl);
-//             }
-//             break;
-
-//           case "reset":
-//             if (currentLocation) {
-//               map.setView(currentLocation, 13);
-//             }
-//             break;
-
-//           default:
-//             console.log("Unknown command:", transcription.command);
-//         }
-//       } catch (error) {
-//         console.error("Error processing voice command:", error);
-//       }
-//     },
-//     [map, currentLocation, routingControl]
-//   );
-
-//   useEffect(() => {
-//     setProcessVoiceCommand(() => processVoiceCommand);
-//   }, [processVoiceCommand, setProcessVoiceCommand]);
-
-//   return currentLocation ? (
-//     <Marker position={currentLocation}>
-//       <Popup>📍 Your Location</Popup>
-//     </Marker>
-//   ) : null;
-// };
-
-// // Main MapView component
-// const MapView = ({ position, setProcessVoiceCommand }) => {
-//   return (
-//     <div className="w-screen h-screen z-0">
-//       <MapContainer
-//         center={[20.5937, 78.9629]}
-//         zoom={13}
-//         className="absolute top-0 left-0 w-full h-full z-0"
-//         zoomControl={false}
-//       >
-//         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-//         <MapController setProcessVoiceCommand={setProcessVoiceCommand} />
-//         <ZoomControl position="bottomright" />
-//       </MapContainer>
-//     </div>
-//   );
-// };
-// export default MapView;
-
-// MapView.jsx
-// MapView.jsx
-// MapView.jsx
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap, ZoomControl } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import "leaflet-routing-machine";
 
+// Define custom markers for different locations
+const createCustomIcon = (iconUrl, className) => {
+  return L.icon({
+    iconUrl: iconUrl || "https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png",
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowUrl: "https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png",
+    shadowSize: [41, 41],
+    className: className || ""
+  });
+};
+
 // Separate component to handle map operations
-const MapController = ({ setProcessVoiceCommand, updateDirectionsData }) => {
+const MapController = ({ setProcessVoiceCommand, updateDirectionsData, position }) => {
   const map = useMap();
   const [routingControl, setRoutingControl] = useState(null);
   const [currentLocation, setCurrentLocation] = useState(null);
+  const [fromMarker, setFromMarker] = useState(null);
+  const [toMarker, setToMarker] = useState(null);
+
+  // References to store markers
+  const fromMarkerRef = useRef(null);
+  const toMarkerRef = useRef(null);
 
   // Add CSS to hide routing container completely
   useEffect(() => {
@@ -174,11 +58,61 @@ const MapController = ({ setProcessVoiceCommand, updateDirectionsData }) => {
     }
   }, [map]);
 
+  //Added to make the search function work
+  // Add a useEffect to watch for position changes
+  useEffect(() => {
+    if (position && position.length === 2) {
+      map.setView(position, 13);
+    }
+  }, [position, map]);
+
+  // Function to create and add markers
+  const addLocationMarkers = useCallback((fromCoords, toCoords) => {
+    // Remove existing markers
+    if (fromMarkerRef.current) {
+      map.removeLayer(fromMarkerRef.current);
+    }
+    if (toMarkerRef.current) {
+      map.removeLayer(toMarkerRef.current);
+    }
+
+    // Create custom icons
+    const fromIcon = createCustomIcon(null, "from-location-marker");
+    const toIcon = createCustomIcon(null, "to-location-marker");
+
+    // Create new markers
+    if (fromCoords) {
+      const newFromMarker = L.marker([fromCoords.lat, fromCoords.lng], { icon: fromIcon })
+        .addTo(map)
+        .bindPopup("📍 From Location");
+      
+      fromMarkerRef.current = newFromMarker;
+      setFromMarker(newFromMarker);
+    }
+    
+    if (toCoords) {
+      const newToMarker = L.marker([toCoords.lat, toCoords.lng], { icon: toIcon })
+        .addTo(map)
+        .bindPopup("🏁 Destination");
+      
+      toMarkerRef.current = newToMarker;
+      setToMarker(newToMarker);
+    }
+  }, [map]);
+
+
   // Custom routing control with events and UI customization
   const createCustomRoutingControl = useCallback((waypoints) => {
     // Remove existing routing control if it exists
     if (routingControl) {
       routingControl.remove();
+    }
+
+    // Add markers for from and to locations
+    if (waypoints.length >= 2) {
+      const fromCoords = { lat: waypoints[0].lat, lng: waypoints[0].lng };
+      const toCoords = { lat: waypoints[waypoints.length-1].lat, lng: waypoints[waypoints.length-1].lng };
+      addLocationMarkers(fromCoords, toCoords);
     }
 
     // Create a custom routing control with completely hidden UI
@@ -311,6 +245,17 @@ const MapController = ({ setProcessVoiceCommand, updateDirectionsData }) => {
             if (routingControl) {
               routingControl.remove();
               setRoutingControl(null);
+              
+              // Also remove markers when clearing directions
+              if (fromMarkerRef.current) {
+                map.removeLayer(fromMarkerRef.current);
+                fromMarkerRef.current = null;
+              }
+              if (toMarkerRef.current) {
+                map.removeLayer(toMarkerRef.current);
+                toMarkerRef.current = null;
+              }
+              
               if (updateDirectionsData) {
                 updateDirectionsData(null);
               }
@@ -318,8 +263,28 @@ const MapController = ({ setProcessVoiceCommand, updateDirectionsData }) => {
             break;
 
           case "reset":
+            // Clear any markers and routing
+            if (routingControl) {
+              routingControl.remove();
+              setRoutingControl(null);
+            }
+            
+            if (fromMarkerRef.current) {
+              map.removeLayer(fromMarkerRef.current);
+              fromMarkerRef.current = null;
+            }
+            
+            if (toMarkerRef.current) {
+              map.removeLayer(toMarkerRef.current);
+              toMarkerRef.current = null;
+            }
+            
             if (currentLocation) {
               map.setView(currentLocation, 13);
+            }
+            
+            if (updateDirectionsData) {
+              updateDirectionsData(null);
             }
             break;
 
@@ -373,6 +338,7 @@ const MapView = ({ position, setProcessVoiceCommand, updateDirectionsData }) => 
         <MapController 
           setProcessVoiceCommand={setProcessVoiceCommand} 
           updateDirectionsData={safeUpdateDirectionsData}
+          position={position}
         />
         <ZoomControl position="bottomright" />
       </MapContainer>
