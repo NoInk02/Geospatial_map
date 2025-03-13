@@ -1,16 +1,19 @@
-// import React, { useState,useCallback } from "react";
+
+
+// import React, { useState, useCallback } from "react";
 // import opencage from "opencage-api-client";
 // import MapView from "./MapView";
 // import AudioRecorder from "./AudioRecorder";
+// import DirectionsSidebar from "./DirectionsSidebar";
 
-// //const API_KEY = "YOUR_OPENCAGE_API_KEY"; // Replace with your API key
 // const API_KEY = import.meta.env.VITE_GEOCODER_API_KEY;
 
 // function SearchBar() {
 //   const [query, setQuery] = useState("");
 //   const [processVoiceCommandFn, setProcessVoiceCommandFn] = useState(null);
-//   //const [result, setResult] = useState(null);
 //   const [position, setPosition] = useState([20, 78]); // Default: India (lat, lng)
+//   const [showDirections, setShowDirections] = useState(false);
+//   const [directionsData, setDirectionsData] = useState(null);
   
 //   const handleSearch = async (e) => {
 //     e.preventDefault();
@@ -26,6 +29,7 @@
 //       console.error("Error fetching geocode data:", error);
 //     }
 //   };
+
 //   const handleVoiceCommand = useCallback(
 //     async (data) => {
 //       if (processVoiceCommandFn) {
@@ -37,15 +41,33 @@
 //     },
 //     [processVoiceCommandFn]
 //   );
-  
+
+//   const toggleDirectionsSidebar = () => {
+//     setShowDirections(!showDirections);
+//   };
+
+//   const clearDirections = () => {
+//     if (processVoiceCommandFn) {
+//       processVoiceCommandFn({ command: "clear_directions" });
+//     }
+//     setDirectionsData(null);
+//     setShowDirections(false);
+//   };
+
+//   // Function to update directions data from MapView
+//   const updateDirectionsData = useCallback((data) => {
+//     setDirectionsData(data);
+//     setShowDirections(true);
+//   }, []);
 
 //   return (
-  
-
-
 //     <div className="relative w-screen h-screen">
 //       {/* Map Component */}
-//       <MapView position={position} setProcessVoiceCommand={setProcessVoiceCommandFn}  />
+//       <MapView 
+//         position={position} 
+//         setProcessVoiceCommand={setProcessVoiceCommandFn}
+//         updateDirectionsData={updateDirectionsData}
+//       />
 
 //       {/* Search Bar (Top Left Corner) */}
 //       <div className="absolute top-4 left-4 bg-white p-3 rounded-lg shadow-md flex items-center w-full max-w-md z-50">
@@ -74,26 +96,65 @@
 //               />
 //             </svg>
 //           </button>
-
           
 //           <AudioRecorder onTranscription={handleVoiceCommand} />
 
-//           {/* Directions Button (New Arrow Icon) */}
-//           <button type="button" className="text-gray-500 hover:text-gray-700 px-3">
-//             <svg class="w-5 h-5 text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-600 transition-colors duration-200"
+//           {/* Directions Toggle Button */}
+//           <button 
+//             type="button" 
+//             onClick={toggleDirectionsSidebar}
+//             className={`text-gray-500 hover:text-gray-700 px-3 ${directionsData ? 'text-blue-500' : ''}`}
+//             disabled={!directionsData}
+//           >
+//             <svg 
+//               className={`w-5 h-5 ${directionsData ? 'text-blue-500 hover:text-blue-700' : 'text-gray-400'} transition-colors duration-200`}
 //               aria-hidden="true"
 //               xmlns="http://www.w3.org/2000/svg"
 //               fill="none" 
-//               viewBox="0 0 14 10">
-//               <path stroke="currentColor"
-//                 stroke-linecap="round"
-//                 stroke-linejoin="round"
-//                 stroke-width="2.5"
-//                 d="M1 5h12m0 0L9 1m4 4L9 9" />
+//               viewBox="0 0 14 10"
+//             >
+//               <path 
+//                 stroke="currentColor"
+//                 strokeLinecap="round"
+//                 strokeLinejoin="round"
+//                 strokeWidth="2.5"
+//                 d="M1 5h12m0 0L9 1m4 4L9 9" 
+//               />
 //             </svg>
 //           </button>
+
+//           {/* Clear Directions Button (only visible when directions exist) */}
+//           {directionsData && (
+//             <button 
+//               type="button" 
+//               onClick={clearDirections}
+//               className="text-red-500 hover:text-red-700 px-3"
+//             >
+//               <svg 
+//                 xmlns="http://www.w3.org/2000/svg" 
+//                 viewBox="0 0 24 24" 
+//                 fill="currentColor" 
+//                 className="w-5 h-5"
+//               >
+//                 <path 
+//                   fillRule="evenodd" 
+//                   d="M5.47 5.47a.75.75 0 0 1 1.06 0L12 10.94l5.47-5.47a.75.75 0 1 1 1.06 1.06L13.06 12l5.47 5.47a.75.75 0 1 1-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 0 1-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 0 1 0-1.06Z" 
+//                   clipRule="evenodd" 
+//                 />
+//               </svg>
+//             </button>
+//           )}
 //         </form>
 //       </div>
+
+//       {/* Directions Sidebar - only visible when showDirections is true and directionsData exists */}
+//       {showDirections && directionsData && (
+//         <DirectionsSidebar 
+//           directions={directionsData} 
+//           onClose={toggleDirectionsSidebar}
+//           onClear={clearDirections}
+//         />
+//       )}
 //     </div>
 //   );
 // }
@@ -114,6 +175,7 @@ function SearchBar() {
   const [position, setPosition] = useState([20, 78]); // Default: India (lat, lng)
   const [showDirections, setShowDirections] = useState(false);
   const [directionsData, setDirectionsData] = useState(null);
+  const [isHospitalMode, setIsHospitalMode] = useState(false);
   
   const handleSearch = async (e) => {
     e.preventDefault();
@@ -152,6 +214,17 @@ function SearchBar() {
     }
     setDirectionsData(null);
     setShowDirections(false);
+  };
+
+  const toggleHospitalMode = () => {
+    // Toggle hospital visibility
+    if (processVoiceCommandFn) {
+      const newMode = !isHospitalMode;
+      processVoiceCommandFn({ 
+        command: newMode ? "show_hospitals" : "hide_hospitals" 
+      });
+      setIsHospitalMode(newMode);
+    }
   };
 
   // Function to update directions data from MapView
@@ -198,6 +271,23 @@ function SearchBar() {
           </button>
           
           <AudioRecorder onTranscription={handleVoiceCommand} />
+
+          {/* Hospital Button */}
+          <button 
+            type="button" 
+            onClick={toggleHospitalMode}
+            className={`text-gray-500 hover:text-gray-700 px-3 ${isHospitalMode ? 'text-red-500' : ''}`}
+            title="Find hospitals"
+          >
+            <svg 
+              xmlns="http://www.w3.org/2000/svg" 
+              viewBox="0 0 24 24" 
+              fill="currentColor" 
+              className={`w-5 h-5 ${isHospitalMode ? 'text-red-500' : ''}`}
+            >
+              <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25Zm-1.72 6.97a.75.75 0 1 0-1.06 1.06L10.94 12l-1.72 1.72a.75.75 0 1 0 1.06 1.06L12 13.06l1.72 1.72a.75.75 0 1 0 1.06-1.06L13.06 12l1.72-1.72a.75.75 0 1 0-1.06-1.06L12 10.94l-1.72-1.72Z" clipRule="evenodd" />
+            </svg>
+          </button>
 
           {/* Directions Toggle Button */}
           <button 
