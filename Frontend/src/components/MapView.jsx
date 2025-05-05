@@ -1,18 +1,43 @@
-// MapView.jsx
+
+
+
+
+
+
+
+//MapView.jsx
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap, ZoomControl } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import "leaflet-routing-machine";
-import Hospitals from "./Map/Hospitals";
+import Places from "./Map/Places";
 
-// Separate component to handle map operations
-const MapController = ({ setProcessVoiceCommand, updateDirectionsData, showHospitals, toggleHospitalsVisibility }) => {
+const createCustomIcon = (iconUrl, className) => {
+  return L.icon({
+    iconUrl: iconUrl || "https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png",
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowUrl: "https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png",
+    shadowSize: [41, 41],
+    className: className || ""
+  });
+};
+
+const MapController = ({ setProcessVoiceCommand, updateDirectionsData,position }) => {
   const map = useMap();
   const [routingControl, setRoutingControl] = useState(null);
   const [currentLocation, setCurrentLocation] = useState(null);
+  const [placeType, setPlaceType] = useState(null);
+  const [fromMarker, setFromMarker] = useState(null);
+  const [toMarker, setToMarker] = useState(null);
 
-  // Add CSS to hide routing container completely
+  // References to store markers
+  const fromMarkerRef = useRef(null);
+  const toMarkerRef = useRef(null);
+
+
   useEffect(() => {
     const style = document.createElement("style");
     style.textContent = `
@@ -28,7 +53,7 @@ const MapController = ({ setProcessVoiceCommand, updateDirectionsData, showHospi
   }, []);
 
   useEffect(() => {
-    // Get user's location
+      // Get user's location
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
@@ -41,11 +66,78 @@ const MapController = ({ setProcessVoiceCommand, updateDirectionsData, showHospi
     }
   }, [map]);
 
-  // Custom routing control with events and UI customization
+
+//Added to make the search function work
+  // Add a useEffect to watch for position changes
+  useEffect(() => {
+    if (position && position.length === 2) {
+      map.setView(position, 13);
+    }
+  }, [position, map]);
+
+  // Function to create and add markers
+  const addLocationMarkers = useCallback((fromCoords, toCoords) => {
+    // Remove existing markers
+    if (fromMarkerRef.current) {
+      map.removeLayer(fromMarkerRef.current);
+    }
+    if (toMarkerRef.current) {
+      map.removeLayer(toMarkerRef.current);
+    }
+
+    // Create custom icons
+    const fromIcon = createCustomIcon(null, "from-location-marker");
+    const toIcon = createCustomIcon(null, "to-location-marker");
+
+    // Create new markers
+    if (fromCoords) {
+      const newFromMarker = L.marker([fromCoords.lat, fromCoords.lng], { icon: fromIcon })
+        .addTo(map)
+        .bindPopup("📍 From Location");
+      
+      fromMarkerRef.current = newFromMarker;
+      setFromMarker(newFromMarker);
+    }
+    
+    if (toCoords) {
+      const newToMarker = L.marker([toCoords.lat, toCoords.lng], { icon: toIcon })
+        .addTo(map)
+        .bindPopup("🏁 Destination");
+      
+      toMarkerRef.current = newToMarker;
+      setToMarker(newToMarker);
+    }
+  }, [map]);
+
+  // const createCustomRoutingControl = useCallback((waypoints) => {
+  //   if (routingControl) routingControl.remove();
+  //   const newRoutingControl = L.Routing.control({
+  //     waypoints,
+  //     show: false,
+  //     plan: L.Routing.plan(waypoints, { createMarker: () => null })
+  //   }).addTo(map);
+  //   newRoutingControl.on('routesfound', (e) => {
+  //     const route = e.routes[0];
+  //     updateDirectionsData({
+  //       totalDistance: route.summary.totalDistance,
+  //       totalTime: route.summary.totalTime,
+  //       steps: route.instructions.map(i => ({ distance: i.distance, text: i.text }))
+  //     });
+  //   });
+  //   return newRoutingControl;
+  // }, [map, routingControl, updateDirectionsData]);
+
   const createCustomRoutingControl = useCallback((waypoints) => {
     // Remove existing routing control if it exists
     if (routingControl) {
       routingControl.remove();
+    }
+
+    // Add markers for from and to locations
+    if (waypoints.length >= 2) {
+      const fromCoords = { lat: waypoints[0].lat, lng: waypoints[0].lng };
+      const toCoords = { lat: waypoints[waypoints.length-1].lat, lng: waypoints[waypoints.length-1].lng };
+      addLocationMarkers(fromCoords, toCoords);
     }
 
     // Create a custom routing control with completely hidden UI
@@ -125,16 +217,8 @@ const MapController = ({ setProcessVoiceCommand, updateDirectionsData, showHospi
 
   const processVoiceCommand = useCallback(
     async (transcription) => {
-      if (!transcription?.command) {
-        console.warn("Invalid transcription:", transcription);
-        return;
-      }
-
-      console.log("Processing command:", transcription.command);
-
-      try {
-        switch (transcription.command) {
-          case "zoom_in":
+      switch (transcription.command) {
+        case "zoom_in":
             if (transcription.coords?.[0]) {
               map.setView(
                 [transcription.coords[0].lat, transcription.coords[0].lng],
@@ -145,67 +229,79 @@ const MapController = ({ setProcessVoiceCommand, updateDirectionsData, showHospi
               map.setZoom(map.getZoom() + 1);
             }
             break;
-
-          case "zoom_out":
-            map.setZoom(map.getZoom() - 1);
-            break;
-
-          case "search":
-            if (transcription.coords?.[0]) {
-              map.setView(
-                [transcription.coords[0].lat, transcription.coords[0].lng],
-                map.getZoom()
-              );
+        case "zoom_out":
+          map.setZoom(map.getZoom() - 1);
+          break;
+        case "search":
+          if (transcription.coords?.[0]) {
+            map.setView([transcription.coords[0].lat, transcription.coords[0].lng], 13);
+          }
+          break;
+        case "directions":
+          if (transcription.coords) {
+            const waypoints = transcription.coords.map(coord => L.latLng(coord.lat, coord.lng));
+            if (waypoints.length === 1 && currentLocation) {
+              waypoints.unshift(L.latLng(currentLocation[0], currentLocation[1]));
             }
-            break;
-
-          case "directions":
-            if (transcription.coords) {
-              const waypoints = transcription.coords.map(coord =>
-                L.latLng(coord.lat, coord.lng)
-              );
-
-              if (waypoints.length === 1 && currentLocation) {
-                waypoints.unshift(L.latLng(currentLocation[0], currentLocation[1]));
-              }
-
-              const newRoutingControl = createCustomRoutingControl(waypoints);
-              setRoutingControl(newRoutingControl);
-            }
-            break;
-
-          case "show_hospitals":
-            toggleHospitalsVisibility(true);
-            break;
-
-          case "hide_hospitals":
-            toggleHospitalsVisibility(false);
-            break;
-
+            setRoutingControl(createCustomRoutingControl(waypoints));
+          }
+          break;
+        case "show_places":
+          setPlaceType(transcription.place_type);
+          break;
+        case "hide_places":
+          setPlaceType(null);
+          break;
           case "clear_directions":
             if (routingControl) {
               routingControl.remove();
               setRoutingControl(null);
+              
+              // Also remove markers when clearing directions
+              if (fromMarkerRef.current) {
+                map.removeLayer(fromMarkerRef.current);
+                fromMarkerRef.current = null;
+              }
+              if (toMarkerRef.current) {
+                map.removeLayer(toMarkerRef.current);
+                toMarkerRef.current = null;
+              }
+              
               if (updateDirectionsData) {
                 updateDirectionsData(null);
               }
             }
             break;
-
-          case "reset":
-            if (currentLocation) {
-              map.setView(currentLocation, 13);
-            }
-            break;
-
-          default:
-            console.log("Unknown command:", transcription.command);
-        }
-      } catch (error) {
-        console.error("Error processing voice command:", error);
+            case "reset":
+              // Clear any markers and routing
+              if (routingControl) {
+                routingControl.remove();
+                setRoutingControl(null);
+              }
+              
+              if (fromMarkerRef.current) {
+                map.removeLayer(fromMarkerRef.current);
+                fromMarkerRef.current = null;
+              }
+              
+              if (toMarkerRef.current) {
+                map.removeLayer(toMarkerRef.current);
+                toMarkerRef.current = null;
+              }
+              
+              if (currentLocation) {
+                map.setView(currentLocation, 13);
+              }
+              
+              if (updateDirectionsData) {
+                updateDirectionsData(null);
+              }
+              break;
+        default:
+          console.log("Unknown command:", transcription.command);
       }
     },
-    [map, currentLocation, routingControl, createCustomRoutingControl, updateDirectionsData, toggleHospitalsVisibility]
+    [map, currentLocation, routingControl, createCustomRoutingControl, updateDirectionsData]
   );
 
   useEffect(() => {
@@ -219,16 +315,13 @@ const MapController = ({ setProcessVoiceCommand, updateDirectionsData, showHospi
           <Popup>📍 Your Location</Popup>
         </Marker>
       )}
-      <Hospitals visible={showHospitals} userLocation={currentLocation} />
+      <Places visible={placeType !== null} userLocation={currentLocation} placeType={placeType} />
     </>
   );
 };
 
-// Main MapView component
 const MapView = ({ position, setProcessVoiceCommand, updateDirectionsData }) => {
-  // Use a ref for stable callback reference
   const stableUpdateDirectionsData = useRef(updateDirectionsData);
-  const [showHospitals, setShowHospitals] = useState(false);
   
   // Update the ref when the prop changes
   useEffect(() => {
@@ -241,50 +334,19 @@ const MapView = ({ position, setProcessVoiceCommand, updateDirectionsData }) => 
       stableUpdateDirectionsData.current(data);
     }
   }, []);
-
-  // Provide toggleHospitalsVisibility function to pass to MapController
-  const toggleHospitalsVisibility = useCallback((value) => {
-    setShowHospitals(prev => value !== undefined ? value : !prev);
-  }, []);
-
   return (
     <div className="w-screen h-screen z-0">
-      <MapContainer
-        center={[20.5937, 78.9629]}
-        zoom={13}
-        className="absolute top-0 left-0 w-full h-full z-0"
-        zoomControl={false}
-      >
+      <MapContainer center={position} zoom={13} className="absolute top-0 left-0 w-full h-full z-0" zoomControl={false}>
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
         <MapController 
           setProcessVoiceCommand={setProcessVoiceCommand} 
           updateDirectionsData={safeUpdateDirectionsData}
-          showHospitals={showHospitals}
-          toggleHospitalsVisibility={toggleHospitalsVisibility}
+          position={position}
         />
         <ZoomControl position="bottomright" />
       </MapContainer>
-
-      {/* Expose the hospital toggle function */}
-      <div className="absolute top-4 right-4 z-50">
-        <button
-          onClick={() => toggleHospitalsVisibility()}
-          className={`bg-white p-2 rounded-lg shadow-md text-gray-700 hover:bg-gray-100 flex items-center ${showHospitals ? 'bg-blue-50' : ''}`}
-        >
-          <svg 
-            xmlns="http://www.w3.org/2000/svg" 
-            viewBox="0 0 24 24" 
-            fill="currentColor" 
-            className={`w-6 h-6 ${showHospitals ? 'text-blue-500' : 'text-gray-700'}`}
-          >
-            <path d="M11.25 4.533A9.707 9.707 0 0 0 6 3a9.735 9.735 0 0 0-3.25.555.75.75 0 0 0-.5.707v14.25a.75.75 0 0 0 1 .707A8.237 8.237 0 0 1 6 18.75c1.995 0 3.823.707 5.25 1.886V4.533ZM12.75 20.636A8.214 8.214 0 0 1 18 18.75c.966 0 1.89.166 2.75.47a.75.75 0 0 0 1-.708V4.262a.75.75 0 0 0-.5-.707A9.735 9.735 0 0 0 18 3a9.707 9.707 0 0 0-5.25 1.533v16.103Z" />
-          </svg>
-          <span className="ml-2">{showHospitals ? 'Hide Hospitals' : 'Show Hospitals'}</span>
-        </button>
-      </div>
     </div>
   );
 };
 
 export default MapView;
-

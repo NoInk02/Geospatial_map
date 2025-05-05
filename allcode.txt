@@ -1,0 +1,1248 @@
+
+// Places.jsx
+import React, { useState, useEffect, useRef } from 'react';
+import { useMap } from 'react-leaflet';
+import L from 'leaflet';
+
+const Places = ({ visible, userLocation, placeType }) => {
+  const map = useMap();
+  const [places, setPlaces] = useState([]);
+  const placesLayerRef = useRef(null);
+
+  // const placeQueries = {
+  //   hospital: { tags: [{ key: "amenity", values: ["hospital"] }], icon: "🏥", color: "#FF5733" },
+  //   restaurant: { tags: [{ key: "amenity", values: ["restaurant", "fast_food"] }], icon: "🍽️", color: "#FF5733" },
+  //   pharmacy: { tags: [{ key: "amenity", values: ["pharmacy"] }], icon: "💊", color: "#1ABC9C" },
+  //   hotel: { tags: [{ key: "tourism", values: ["hotel"] }], icon: "🏨", color: "#8E44AD" },
+  //   atm: { tags: [{ key: "amenity", values: ["atm"] }], icon: "💰", color: "#2ECC71" }
+  // };
+
+  const placeQueries = {
+        hospital: { tags: [{ key: "amenity", values: ["hospital"] }, { key: "healthcare", values: ["hospital"] }, { key: "building", values: ["hospital"] }], icon: "🏥", color: "#FF5733" },
+        restaurant: { tags: [{ key: "amenity", values: ["restaurant", "fast_food", "cafe", "food_court"] }], icon: "🍽️", color: "#FF5733" },
+        cafe: { tags: [{ key: "amenity", values: ["cafe"] }], icon: "☕", color: "#8B4513" },
+        shop: { tags: [{ key: "shop", values: ["supermarket", "convenience", "mall", "department_store"] }], icon: "🛒", color: "#3498DB" },
+        atm: { tags: [{ key: "amenity", values: ["atm"] }, { key: "atm", values: ["yes"] }], icon: "💰", color: "#2ECC71" },
+        bank: { tags: [{ key: "amenity", values: ["bank"] }], icon: "🏦", color: "#9B59B6" },
+        school: { tags: [{ key: "amenity", values: ["school"] }, { key: "building", values: ["school"] }], icon: "🏫", color: "#F1C40F" },
+        college: { tags: [{ key: "amenity", values: ["college", "university"] }], icon: "🎓", color: "#E74C3C" },
+        park: { tags: [{ key: "leisure", values: ["park", "garden"] }], icon: "🌳", color: "#27AE60" },
+        pharmacy: { tags: [{ key: "amenity", values: ["pharmacy"] }, { key: "shop", values: ["pharmacy"] }], icon: "💊", color: "#1ABC9C" },
+        cinema: { tags: [{ key: "amenity", values: ["cinema"] }], icon: "🎬", color: "#34495E" },
+        gym: { tags: [{ key: "leisure", values: ["fitness_centre"] }, { key: "amenity", values: ["gym"] }], icon: "🏋️", color: "#F39C12" },
+        gas_station: { tags: [{ key: "amenity", values: ["fuel"] }], icon: "⛽", color: "#D35400" },
+        hotel: { tags: [{ key: "tourism", values: ["hotel", "motel", "hostel"] }], icon: "🏨", color: "#8E44AD" },
+        police: { tags: [{ key: "amenity", values: ["police"] }], icon: "👮", color: "#2C3E50" },
+        post_office: { tags: [{ key: "amenity", values: ["post_office"] }], icon: "📮", color: "#E67E22" },
+        bus_stop: { tags: [{ key: "highway", values: ["bus_stop"] }], icon: "🚏", color: "#16A085" },
+        parking: { tags: [{ key: "amenity", values: ["parking"] }], icon: "🅿️", color: "#3498DB" },
+        library: { tags: [{ key: "amenity", values: ["library"] }], icon: "📚", color: "#7F8C8D" }
+      };
+    
+
+  useEffect(() => {
+    if (!placesLayerRef.current) {
+      placesLayerRef.current = L.layerGroup().addTo(map);
+    }
+    if (!visible) {
+      placesLayerRef.current.clearLayers();
+    }
+  }, [map, visible]);
+
+  useEffect(() => {
+    if (visible && placeType && userLocation) {
+      fetchPlaces(placeType, userLocation[0], userLocation[1]);
+    }
+  }, [visible, userLocation, placeType]);
+
+  const buildOverpassQuery = (placeType, lat, lng) => {
+    if (!placeQueries[placeType]) return null;
+    const latRadius = 0.145;
+    const lngRadius = 0.145 / Math.cos((lat * Math.PI) / 180);
+    const bbox = `${lat - latRadius},${lng - lngRadius},${lat + latRadius},${lng + lngRadius}`;
+    const tags = placeQueries[placeType].tags;
+    let queryParts = [];
+    for (const tag of tags) {
+      for (const value of tag.values) {
+        queryParts.push(`node["${tag.key}"="${value}"](${bbox});`);
+      }
+    }
+    return `[out:json];(${queryParts.join('\n')});out body;>;out skel qt;`;
+  };
+
+  const fetchPlaces = async (placeType, lat, lng) => {
+    placesLayerRef.current.clearLayers();
+    const query = buildOverpassQuery(placeType, lat, lng);
+    if (!query) return;
+
+    try {
+      const response = await fetch('https://overpass-api.de/api/interpreter', {
+        method: 'POST',
+        body: query
+      });
+      const data = await response.json();
+      processPlaceData(data, lat, lng, placeType);
+    } catch (err) {
+      console.error(`Error fetching ${placeType}:`, err);
+    }
+  };
+
+  const processPlaceData = (data, lat, lng, placeType) => {
+    const placeConfig = placeQueries[placeType];
+    const latlngs = [];
+    data.elements.forEach(el => {
+      if (el.type === 'node' && el.lat && el.lon) {
+        const marker = L.marker([el.lat, el.lon], {
+          icon: L.divIcon({
+            html: `<div style="background-color:${placeConfig.color};width:28px;height:28px;border-radius:50%;color:white;font-size:14px;display:flex;align-items:center;justify-content:center;">${placeConfig.icon}</div>`,
+            iconSize: [28, 28]
+          })
+        });
+        marker.bindPopup(el.tags?.name || `Unnamed ${placeType}`);
+        marker.addTo(placesLayerRef.current);
+        latlngs.push([el.lat, el.lon]);
+      }
+    });
+    if (latlngs.length) {
+      map.fitBounds(L.latLngBounds(latlngs), { padding: [50, 50], maxZoom: 15 });
+    }
+    setPlaces(data.elements);
+  };
+
+  return null;
+};
+
+export default Places;
+//MapView.jsx
+import React, { useEffect, useState, useCallback } from "react";
+import { MapContainer, TileLayer, Marker, Popup, useMap, ZoomControl } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
+import L from "leaflet";
+import "leaflet-routing-machine";
+import Places from "./Map/Places";
+
+const MapController = ({ setProcessVoiceCommand, updateDirectionsData }) => {
+  const map = useMap();
+  const [routingControl, setRoutingControl] = useState(null);
+  const [currentLocation, setCurrentLocation] = useState(null);
+  const [placeType, setPlaceType] = useState(null);
+
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          setCurrentLocation([latitude, longitude]);
+          map.setView([latitude, longitude], 13);
+        },
+        (error) => console.error("Error getting location:", error)
+      );
+    }
+  }, [map]);
+
+  const createCustomRoutingControl = useCallback((waypoints) => {
+    if (routingControl) routingControl.remove();
+    const newRoutingControl = L.Routing.control({
+      waypoints,
+      show: false,
+      plan: L.Routing.plan(waypoints, { createMarker: () => null })
+    }).addTo(map);
+    newRoutingControl.on('routesfound', (e) => {
+      const route = e.routes[0];
+      updateDirectionsData({
+        totalDistance: route.summary.totalDistance,
+        totalTime: route.summary.totalTime,
+        steps: route.instructions.map(i => ({ distance: i.distance, text: i.text }))
+      });
+    });
+    return newRoutingControl;
+  }, [map, routingControl, updateDirectionsData]);
+
+  const processVoiceCommand = useCallback(
+    async (transcription) => {
+      switch (transcription.command) {
+        case "zoom_in":
+          map.setZoom(map.getZoom() + 1);
+          break;
+        case "zoom_out":
+          map.setZoom(map.getZoom() - 1);
+          break;
+        case "search":
+          if (transcription.coords?.[0]) {
+            map.setView([transcription.coords[0].lat, transcription.coords[0].lng], 13);
+          }
+          break;
+        case "directions":
+          if (transcription.coords) {
+            const waypoints = transcription.coords.map(coord => L.latLng(coord.lat, coord.lng));
+            if (waypoints.length === 1 && currentLocation) {
+              waypoints.unshift(L.latLng(currentLocation[0], currentLocation[1]));
+            }
+            setRoutingControl(createCustomRoutingControl(waypoints));
+          }
+          break;
+        case "show_places":
+          setPlaceType(transcription.place_type);
+          break;
+        case "hide_places":
+          setPlaceType(null);
+          break;
+        case "clear_directions":
+          if (routingControl) {
+            routingControl.remove();
+            setRoutingControl(null);
+            updateDirectionsData(null);
+          }
+          break;
+        case "reset":
+          setPlaceType(null);
+          if (currentLocation) map.setView(currentLocation, 13);
+          break;
+        default:
+          console.log("Unknown command:", transcription.command);
+      }
+    },
+    [map, currentLocation, routingControl, createCustomRoutingControl, updateDirectionsData]
+  );
+
+  useEffect(() => {
+    setProcessVoiceCommand(() => processVoiceCommand);
+  }, [processVoiceCommand, setProcessVoiceCommand]);
+
+  return (
+    <>
+      {currentLocation && (
+        <Marker position={currentLocation}>
+          <Popup>📍 Your Location</Popup>
+        </Marker>
+      )}
+      <Places visible={placeType !== null} userLocation={currentLocation} placeType={placeType} />
+    </>
+  );
+};
+
+const MapView = ({ position, setProcessVoiceCommand, updateDirectionsData }) => {
+  return (
+    <div className="w-screen h-screen z-0">
+      <MapContainer center={position} zoom={13} className="absolute top-0 left-0 w-full h-full z-0" zoomControl={false}>
+        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+        <MapController setProcessVoiceCommand={setProcessVoiceCommand} updateDirectionsData={updateDirectionsData} />
+        <ZoomControl position="bottomright" />
+      </MapContainer>
+    </div>
+  );
+};
+
+export default MapView;
+import React, { useState, useCallback } from "react";
+import opencage from "opencage-api-client";
+import MapView from "./MapView";
+import AudioRecorder from "./AudioRecorder";
+import DirectionsSidebar from "./DirectionsSidebar";
+
+const API_KEY = import.meta.env.VITE_GEOCODER_API_KEY;
+const placeTypes = ["hospital", "restaurant", "pharmacy", "hotel", "atm"];
+
+function SearchBar() {
+  const [query, setQuery] = useState("");
+  const [processVoiceCommandFn, setProcessVoiceCommandFn] = useState(null);
+  const [position, setPosition] = useState([20, 78]);
+  const [showDirections, setShowDirections] = useState(false);
+  const [directionsData, setDirectionsData] = useState(null);
+
+  const handleSearch = async (e) => {
+    e.preventDefault();
+    const placeType = placeTypes.find(type => query.toLowerCase() === type);
+    if (placeType) {
+      processVoiceCommandFn({ command: "show_places", place_type: placeType });
+    } else {
+      try {
+        const response = await opencage.geocode({ q: query, key: API_KEY });
+        if (response.results.length > 0) {
+          const { lat, lng } = response.results[0].geometry;
+          setPosition([lat, lng]);
+          processVoiceCommandFn({ command: "search", coords: [{ lat, lng }] });
+        } else {
+          console.log("No results found");
+        }
+      } catch (error) {
+        console.error("Error fetching geocode data:", error);
+      }
+    }
+  };
+
+  const handleVoiceCommand = useCallback((data) => {
+    if (processVoiceCommandFn) processVoiceCommandFn(data);
+  }, [processVoiceCommandFn]);
+
+  const updateDirectionsData = useCallback((data) => {
+    setDirectionsData(data);
+    setShowDirections(!!data);
+  }, []);
+
+  return (
+    <div className="relative w-screen h-screen">
+      <MapView position={position} setProcessVoiceCommand={setProcessVoiceCommandFn} updateDirectionsData={updateDirectionsData} />
+      
+      {/* Search Bar */}
+      <div className="absolute top-4 left-4 bg-white p-3 rounded-lg shadow-md flex items-center w-full max-w-md z-50">
+        <form onSubmit={handleSearch} className="flex w-full items-center">
+          <input
+            type="text"
+            placeholder="Search..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="w-full bg-transparent outline-none text-gray-700 placeholder-gray-400 px-3"
+          />
+          <button type="submit" className="text-gray-500 hover:text-gray-700 px-2">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+              <path fillRule="evenodd" d="M10.5 3.75a6.75 6.75 0 1 0 0 13.5 6.75 6.75 0 0 0 0-13.5ZM2.25 10.5a8.25 8.25 0 1 1 14.59 5.28l4.69 4.69a.75.75 0 1 1-1.06 1.06l-4.69-4.69A8.25 8.25 0 0 1 2.25 10.5Z" clipRule="evenodd" />
+            </svg>
+          </button>
+          <AudioRecorder onTranscription={handleVoiceCommand} />
+        </form>
+      </div>
+
+      {/* Place Type Buttons (Separate from Search Bar) */}
+      <div className="absolute top-4 right-4 flex space-x-2 z-50">
+        {placeTypes.map(type => (
+          <button
+            key={type}
+            onClick={() => processVoiceCommandFn({ command: "show_places", place_type: type })}
+            className="bg-white p-2 rounded-lg shadow-md text-gray-700 hover:bg-gray-100 flex items-center"
+          >
+            {type === "hospital" && "🏥"}
+            {type === "restaurant" && "🍽️"}
+            {type === "pharmacy" && "💊"}
+            {type === "hotel" && "🏨"}
+            {type === "atm" && "💰"}
+            <span className="ml-2">{type.charAt(0).toUpperCase() + type.slice(1)}</span>
+          </button>
+        ))}
+        <button
+          onClick={() => processVoiceCommandFn({ command: "hide_places" })}
+          className="bg-white p-2 rounded-lg shadow-md text-gray-700 hover:bg-gray-100 flex items-center"
+        >
+          ❌ Hide Places
+        </button>
+      </div>
+
+      {showDirections && directionsData && (
+        <DirectionsSidebar directions={directionsData} onClose={() => setShowDirections(false)} onClear={() => processVoiceCommandFn({ command: "clear_directions" })} />
+      )}
+    </div>
+  );
+}
+
+export default SearchBar;
+import React, { useState, useCallback } from "react";
+import opencage from "opencage-api-client";
+import MapView from "./MapView";
+import AudioRecorder from "./AudioRecorder";
+import DirectionsSidebar from "./DirectionsSidebar";
+
+const API_KEY = import.meta.env.VITE_GEOCODER_API_KEY;
+const placeTypes = ["hospital", "restaurant", "pharmacy", "hotel", "atm"];
+
+function SearchBar() {
+  const [query, setQuery] = useState("");
+  const [processVoiceCommandFn, setProcessVoiceCommandFn] = useState(null);
+  const [position, setPosition] = useState([20, 78]);
+  const [showDirections, setShowDirections] = useState(false);
+  const [directionsData, setDirectionsData] = useState(null);
+
+  const handleSearch = async (e) => {
+    e.preventDefault();
+    const placeType = placeTypes.find(type => query.toLowerCase() === type);
+    if (placeType) {
+      processVoiceCommandFn({ command: "show_places", place_type: placeType });
+    } else {
+      try {
+        const response = await opencage.geocode({ q: query, key: API_KEY });
+        if (response.results.length > 0) {
+          const { lat, lng } = response.results[0].geometry;
+          setPosition([lat, lng]);
+          processVoiceCommandFn({ command: "search", coords: [{ lat, lng }] });
+        } else {
+          console.log("No results found");
+        }
+      } catch (error) {
+        console.error("Error fetching geocode data:", error);
+      }
+    }
+  };
+
+  const handleVoiceCommand = useCallback((data) => {
+    if (processVoiceCommandFn) processVoiceCommandFn(data);
+  }, [processVoiceCommandFn]);
+
+  const updateDirectionsData = useCallback((data) => {
+    setDirectionsData(data);
+    setShowDirections(!!data);
+  }, []);
+
+  return (
+    <div className="relative w-screen h-screen">
+      <MapView position={position} setProcessVoiceCommand={setProcessVoiceCommandFn} updateDirectionsData={updateDirectionsData} />
+      
+      {/* Search Bar */}
+      <div className="absolute top-4 left-4 bg-white p-3 rounded-lg shadow-md flex items-center w-full max-w-md z-50">
+        <form onSubmit={handleSearch} className="flex w-full items-center">
+          <input
+            type="text"
+            placeholder="Search..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="w-full bg-transparent outline-none text-gray-700 placeholder-gray-400 px-3"
+          />
+          <button type="submit" className="text-gray-500 hover:text-gray-700 px-2">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+              <path fillRule="evenodd" d="M10.5 3.75a6.75 6.75 0 1 0 0 13.5 6.75 6.75 0 0 0 0-13.5ZM2.25 10.5a8.25 8.25 0 1 1 14.59 5.28l4.69 4.69a.75.75 0 1 1-1.06 1.06l-4.69-4.69A8.25 8.25 0 0 1 2.25 10.5Z" clipRule="evenodd" />
+            </svg>
+          </button>
+          <AudioRecorder onTranscription={handleVoiceCommand} />
+        </form>
+      </div>
+
+      {/* Place Type Buttons (Separate from Search Bar) */}
+      <div className="absolute top-4 right-4 flex space-x-2 z-50">
+        {placeTypes.map(type => (
+          <button
+            key={type}
+            onClick={() => processVoiceCommandFn({ command: "show_places", place_type: type })}
+            className="bg-white p-2 rounded-lg shadow-md text-gray-700 hover:bg-gray-100 flex items-center"
+          >
+            {type === "hospital" && "🏥"}
+            {type === "restaurant" && "🍽️"}
+            {type === "pharmacy" && "💊"}
+            {type === "hotel" && "🏨"}
+            {type === "atm" && "💰"}
+            <span className="ml-2">{type.charAt(0).toUpperCase() + type.slice(1)}</span>
+          </button>
+        ))}
+        <button
+          onClick={() => processVoiceCommandFn({ command: "hide_places" })}
+          className="bg-white p-2 rounded-lg shadow-md text-gray-700 hover:bg-gray-100 flex items-center"
+        >
+          ❌ Hide Places
+        </button>
+      </div>
+
+      {showDirections && directionsData && (
+        <DirectionsSidebar directions={directionsData} onClose={() => setShowDirections(false)} onClear={() => processVoiceCommandFn({ command: "clear_directions" })} />
+      )}
+    </div>
+  );
+}
+
+export default SearchBar;
+import React from 'react';
+
+function DirectionsSidebar({ directions, onClose, onClear }) {
+  if (!directions) return null;
+
+  // Format time from seconds to minutes and hours
+  const formatTime = (seconds) => {
+    if (seconds < 60) return `${seconds} sec`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)} min`;
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    return `${hours} hr ${mins} min`;
+  };
+
+  // Format distance from meters to km or miles
+  const formatDistance = (meters) => {
+    if (meters < 1000) return `${meters.toFixed(0)} m`;
+    return `${(meters / 1000).toFixed(1)} km`;
+  };
+
+  // Format total time and distance for the header
+  const totalTime = formatTime(directions.totalTime);
+  const totalDistance = formatDistance(directions.totalDistance);
+
+  return (
+    <div className="absolute top-16 right-4 w-80 max-h-screen-80 bg-white rounded-lg shadow-lg z-50 flex flex-col">
+      {/* Header */}
+      <div className="bg-blue-500 text-white p-4 rounded-t-lg flex justify-between items-center">
+        <div>
+          <h3 className="font-bold text-lg">Directions</h3>
+          <p className="text-sm">{totalDistance} • {totalTime}</p>
+        </div>
+        <div className="flex space-x-2">
+          {/* <button 
+            onClick={onClear}
+            className="text-white hover:text-red-200"
+            title="Clear directions"
+          >
+            <svg 
+              xmlns="http://www.w3.org/2000/svg" 
+              viewBox="0 0 24 24" 
+              fill="currentColor" 
+              className="w-5 h-5"
+            >
+              <path 
+                fillRule="evenodd" 
+                d="M5.47 5.47a.75.75 0 0 1 1.06 0L12 10.94l5.47-5.47a.75.75 0 1 1 1.06 1.06L13.06 12l5.47 5.47a.75.75 0 1 1-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 0 1-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 0 1 0-1.06Z" 
+                clipRule="evenodd" 
+              />
+            </svg>
+          </button> */}
+          <button 
+            onClick={onClose}
+            className="text-white hover:text-gray-200"
+            title="Close sidebar"
+          >
+            <svg 
+              xmlns="http://www.w3.org/2000/svg" 
+              viewBox="0 0 24 24" 
+              fill="currentColor" 
+              className="w-5 h-5"
+            >
+              <path 
+                fillRule="evenodd" 
+                d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zm-.53 14.03a.75.75 0 001.06 0l3-3a.75.75 0 10-1.06-1.06L12 14.69 9.53 12.22a.75.75 0 00-1.06 1.06l3 3z" 
+                clipRule="evenodd" 
+              />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {/* Directions List */}
+      <div className="overflow-y-auto p-2 max-h-96">
+        <ol className="list-none">
+          {directions.steps.map((step, index) => {
+            // Determine icon based on instruction type
+            let icon;
+            switch (step.type) {
+              case 'StartAt':
+                icon = '🚩';
+                break;
+              case 'WaypointReached':
+                icon = '📍';
+                break;
+              case 'DestinationReached':
+                icon = '🏁';
+                break;
+              case 'TurnRight':
+                icon = '↪️';
+                break;
+              case 'TurnLeft':
+                icon = '↩️';
+                break;
+              case 'TurnSlightRight':
+                icon = '⤴️';
+                break;
+              case 'TurnSlightLeft':
+                icon = '⤵️';
+                break;
+              case 'TurnSharpRight':
+                icon = '⤵️';
+                break;
+              case 'TurnSharpLeft':
+                icon = '⤴️';
+                break;
+              default:
+                icon = '➡️';
+            }
+
+            return (
+              <li key={index} className="py-3 border-b border-gray-100 flex items-start">
+                <div className="mr-3 mt-1">{icon}</div>
+                <div className="flex-1">
+                  <p className="text-gray-800" dangerouslySetInnerHTML={{ __html: step.text }} />
+                  <div className="text-xs text-gray-500 mt-1">
+                    {formatDistance(step.distance)} • {formatTime(step.time)}
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
+    </div>
+  );
+}
+
+export default DirectionsSidebar;
+import React, { useEffect, useState, useCallback, useRef } from "react";
+import { MapContainer, TileLayer, Marker, Popup, useMap, ZoomControl } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
+import L from "leaflet";
+import "leaflet-routing-machine";
+
+// Define custom markers for different locations
+const createCustomIcon = (iconUrl, className) => {
+  return L.icon({
+    iconUrl: iconUrl || "https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png",
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowUrl: "https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png",
+    shadowSize: [41, 41],
+    className: className || ""
+  });
+};
+
+// Separate component to handle map operations
+const MapController = ({ setProcessVoiceCommand, updateDirectionsData, position }) => {
+  const map = useMap();
+  const [routingControl, setRoutingControl] = useState(null);
+  const [currentLocation, setCurrentLocation] = useState(null);
+  const [fromMarker, setFromMarker] = useState(null);
+  const [toMarker, setToMarker] = useState(null);
+
+  // References to store markers
+  const fromMarkerRef = useRef(null);
+  const toMarkerRef = useRef(null);
+
+  // Add CSS to hide routing container completely
+  useEffect(() => {
+    const style = document.createElement("style");
+    style.textContent = `
+      .leaflet-routing-container, .leaflet-routing-alternatives-container {
+        display: none !important;
+      }
+    `;
+    document.head.appendChild(style);
+    
+    return () => {
+      document.head.removeChild(style);
+    };
+  }, []);
+
+  useEffect(() => {
+    // Get user's location
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          setCurrentLocation([latitude, longitude]);
+          map.setView([latitude, longitude], 13);
+        },
+        (error) => console.error("Error getting location:", error)
+      );
+    }
+  }, [map]);
+
+  //Added to make the search function work
+  // Add a useEffect to watch for position changes
+  useEffect(() => {
+    if (position && position.length === 2) {
+      map.setView(position, 13);
+    }
+  }, [position, map]);
+
+  // Function to create and add markers
+  const addLocationMarkers = useCallback((fromCoords, toCoords) => {
+    // Remove existing markers
+    if (fromMarkerRef.current) {
+      map.removeLayer(fromMarkerRef.current);
+    }
+    if (toMarkerRef.current) {
+      map.removeLayer(toMarkerRef.current);
+    }
+
+    // Create custom icons
+    const fromIcon = createCustomIcon(null, "from-location-marker");
+    const toIcon = createCustomIcon(null, "to-location-marker");
+
+    // Create new markers
+    if (fromCoords) {
+      const newFromMarker = L.marker([fromCoords.lat, fromCoords.lng], { icon: fromIcon })
+        .addTo(map)
+        .bindPopup("📍 From Location");
+      
+      fromMarkerRef.current = newFromMarker;
+      setFromMarker(newFromMarker);
+    }
+    
+    if (toCoords) {
+      const newToMarker = L.marker([toCoords.lat, toCoords.lng], { icon: toIcon })
+        .addTo(map)
+        .bindPopup("🏁 Destination");
+      
+      toMarkerRef.current = newToMarker;
+      setToMarker(newToMarker);
+    }
+  }, [map]);
+
+
+  // Custom routing control with events and UI customization
+  const createCustomRoutingControl = useCallback((waypoints) => {
+    // Remove existing routing control if it exists
+    if (routingControl) {
+      routingControl.remove();
+    }
+
+    // Add markers for from and to locations
+    if (waypoints.length >= 2) {
+      const fromCoords = { lat: waypoints[0].lat, lng: waypoints[0].lng };
+      const toCoords = { lat: waypoints[waypoints.length-1].lat, lng: waypoints[waypoints.length-1].lng };
+      addLocationMarkers(fromCoords, toCoords);
+    }
+
+    // Create a custom routing control with completely hidden UI
+    const newRoutingControl = L.Routing.control({
+      waypoints,
+      routeWhileDragging: true,
+      showAlternatives: true,
+      fitSelectedRoutes: true,
+      show: false,
+      lineOptions: {
+        styles: [{ color: '#3388ff', weight: 6 }],
+        extendToWaypoints: true,
+        missingRouteTolerance: 0
+      },
+      // Use a custom plan to avoid creating markers and UI elements
+      plan: L.Routing.plan(waypoints, {
+        createMarker: function() { return null; }, // No markers at waypoints
+        draggableWaypoints: false,
+        addWaypoints: false
+      }),
+      formatter: new L.Routing.Formatter({
+        units: 'metric'
+      })
+    });
+
+    // Add to map
+    newRoutingControl.addTo(map);
+
+    // Handle route finding errors
+    newRoutingControl.on('routingerror', function(e) {
+      console.error('Routing error:', e.error);
+      if (updateDirectionsData) {
+        updateDirectionsData({
+          error: true,
+          message: "Could not calculate route. Please try again later."
+        });
+      }
+    });
+
+    // Extract route info when available and send to parent component
+    newRoutingControl.on('routesfound', function(e) {
+      const routes = e.routes;
+      if (routes && routes.length > 0) {
+        const route = routes[0];
+        
+        // Format directions data for sidebar
+        const formattedDirections = route.instructions.map(instruction => ({
+          distance: instruction.distance,
+          text: instruction.text,
+          time: instruction.time,
+          type: instruction.type
+        }));
+
+        const directionsData = {
+          totalDistance: route.summary.totalDistance,
+          totalTime: route.summary.totalTime,
+          steps: formattedDirections
+        };
+        
+        // Update parent component with route data
+        if (updateDirectionsData) {
+          updateDirectionsData(directionsData);
+        }
+      }
+    });
+
+    // Make sure to hide any containers that might appear
+    setTimeout(() => {
+      const containers = document.querySelectorAll('.leaflet-routing-container');
+      containers.forEach(container => {
+        if (container) container.style.display = 'none';
+      });
+    }, 100);
+
+    return newRoutingControl;
+  }, [map, routingControl, updateDirectionsData]);
+
+  const processVoiceCommand = useCallback(
+    async (transcription) => {
+      if (!transcription?.command) {
+        console.warn("Invalid transcription:", transcription);
+        return;
+      }
+
+      console.log("Processing command:", transcription.command);
+
+      try {
+        switch (transcription.command) {
+          case "zoom_in":
+            if (transcription.coords?.[0]) {
+              map.setView(
+                [transcription.coords[0].lat, transcription.coords[0].lng],
+                map.getZoom()
+              );
+            }
+            else {
+              map.setZoom(map.getZoom() + 1);
+            }
+            break;
+
+          case "zoom_out":
+            map.setZoom(map.getZoom() - 1);
+            break;
+
+          case "search":
+            if (transcription.coords?.[0]) {
+              map.setView(
+                [transcription.coords[0].lat, transcription.coords[0].lng],
+                map.getZoom()
+              );
+            }
+            break;
+
+          case "directions":
+            if (transcription.coords) {
+              const waypoints = transcription.coords.map(coord =>
+                L.latLng(coord.lat, coord.lng)
+              );
+
+              if (waypoints.length === 1 && currentLocation) {
+                waypoints.unshift(L.latLng(currentLocation[0], currentLocation[1]));
+              }
+
+              const newRoutingControl = createCustomRoutingControl(waypoints);
+              setRoutingControl(newRoutingControl);
+            }
+            break;
+
+          case "clear_directions":
+            if (routingControl) {
+              routingControl.remove();
+              setRoutingControl(null);
+              
+              // Also remove markers when clearing directions
+              if (fromMarkerRef.current) {
+                map.removeLayer(fromMarkerRef.current);
+                fromMarkerRef.current = null;
+              }
+              if (toMarkerRef.current) {
+                map.removeLayer(toMarkerRef.current);
+                toMarkerRef.current = null;
+              }
+              
+              if (updateDirectionsData) {
+                updateDirectionsData(null);
+              }
+            }
+            break;
+
+          case "reset":
+            // Clear any markers and routing
+            if (routingControl) {
+              routingControl.remove();
+              setRoutingControl(null);
+            }
+            
+            if (fromMarkerRef.current) {
+              map.removeLayer(fromMarkerRef.current);
+              fromMarkerRef.current = null;
+            }
+            
+            if (toMarkerRef.current) {
+              map.removeLayer(toMarkerRef.current);
+              toMarkerRef.current = null;
+            }
+            
+            if (currentLocation) {
+              map.setView(currentLocation, 13);
+            }
+            
+            if (updateDirectionsData) {
+              updateDirectionsData(null);
+            }
+            break;
+
+          default:
+            console.log("Unknown command:", transcription.command);
+        }
+      } catch (error) {
+        console.error("Error processing voice command:", error);
+      }
+    },
+    [map, currentLocation, routingControl, createCustomRoutingControl, updateDirectionsData]
+  );
+
+  useEffect(() => {
+    setProcessVoiceCommand(() => processVoiceCommand);
+  }, [processVoiceCommand, setProcessVoiceCommand]);
+
+  return currentLocation ? (
+    <Marker position={currentLocation}>
+      <Popup>📍 Your Location</Popup>
+    </Marker>
+  ) : null;
+};
+
+// Main MapView component
+const MapView = ({ position, setProcessVoiceCommand, updateDirectionsData }) => {
+  // Use a ref for stable callback reference
+  const stableUpdateDirectionsData = useRef(updateDirectionsData);
+  
+  // Update the ref when the prop changes
+  useEffect(() => {
+    stableUpdateDirectionsData.current = updateDirectionsData;
+  }, [updateDirectionsData]);
+  
+  // Create a stable callback that uses the ref
+  const safeUpdateDirectionsData = useCallback((data) => {
+    if (stableUpdateDirectionsData.current) {
+      stableUpdateDirectionsData.current(data);
+    }
+  }, []);
+
+  return (
+    <div className="w-screen h-screen z-0">
+      <MapContainer
+        center={[20.5937, 78.9629]}
+        zoom={13}
+        className="absolute top-0 left-0 w-full h-full z-0"
+        zoomControl={false}
+      >
+        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+        <MapController 
+          setProcessVoiceCommand={setProcessVoiceCommand} 
+          updateDirectionsData={safeUpdateDirectionsData}
+          position={position}
+        />
+        <ZoomControl position="bottomright" />
+      </MapContainer>
+    </div>
+  );
+};
+
+export default MapView;
+import React, { useState, useCallback, useEffect, useRef } from "react";
+import opencage from "opencage-api-client";
+import MapView from "./MapView";
+import AudioRecorder from "./AudioRecorder";
+import DirectionsSidebar from "./DirectionsSidebar";
+import DirectionsInputSidebar from "./DirectionsInputSidebar";
+
+const API_KEY = import.meta.env.VITE_GEOCODER_API_KEY;
+
+function SearchBar() {
+  const [query, setQuery] = useState("");
+  const [processVoiceCommandFn, setProcessVoiceCommandFn] = useState(null);
+  const [position, setPosition] = useState([20, 78]); // Default: India (lat, lng)
+  const [showDirections, setShowDirections] = useState(false);
+  const [directionsData, setDirectionsData] = useState(null);
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const searchRef = useRef(null);
+  const [currentLocation, setCurrentLocation] = useState(null);
+  const [showDirectionsInput, setShowDirectionsInput] = useState(false);
+
+  // Get user's current location on component mount
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          setCurrentLocation([latitude, longitude]);
+        },
+        (error) => console.error("Error getting location:", error)
+      );
+    }
+  }, []);
+
+  // Handle outside clicks to close suggestions
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (searchRef.current && !searchRef.current.contains(event.target)) {
+        setSuggestions([]);
+        setShowSuggestions(false);
+      }
+    }
+    
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  // Fetch suggestions when query changes
+  useEffect(() => {
+    const fetchSuggestions = async () => {
+      if (query.length < 3) {
+        setSuggestions([]);
+        return;
+      }
+      
+      try {
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`,
+          {
+            headers: {
+              "Accept-Language": "en-US,en;q=0.9",
+              "User-Agent": "SDS"
+            }
+          }
+        );
+        
+        if (response.ok) {
+          const data = await response.json();
+          setSuggestions(data);
+          setShowSuggestions(data.length > 0);
+        }
+      } catch (error) {
+        console.error("Error fetching suggestions:", error);
+      }
+    };
+    
+    // Debounce the search to avoid too many requests
+    const timeoutId = setTimeout(() => {
+      if (query.length >= 3) {
+        fetchSuggestions();
+      }
+    }, 300);
+    
+    return () => clearTimeout(timeoutId);
+  }, [query]);
+  
+  const handleSearch = async (e) => {
+    e.preventDefault();
+    try {
+      const response = await opencage.geocode({ q: query, key: API_KEY });
+      if (response.results.length > 0) {
+        const location = response.results[0];
+        setPosition([location.geometry.lat, location.geometry.lng]); // Update position
+      } else {
+        console.log("No results found");
+      }
+    } catch (error) {
+      console.error("Error fetching geocode data:", error);
+    }
+    setShowSuggestions(false);
+  };
+
+  const inputRef = useRef(null);
+  const handleSuggestionClick = async (suggestion) => {
+    setQuery(suggestion.display_name);
+    setPosition([parseFloat(suggestion.lat), parseFloat(suggestion.lon)]);
+    setSuggestions([]);
+    setShowSuggestions(false);
+    // Remove focus from the input
+    if (inputRef.current) {
+      inputRef.current.blur();
+    }
+    // Force a re-render by setting a timeout
+    setTimeout(() => {
+      setShowSuggestions(false);
+    }, 0);
+  };
+
+  const handleVoiceCommand = useCallback(
+    async (data) => {
+      if (processVoiceCommandFn) {
+        console.log("Executing voice command:", data);
+        await processVoiceCommandFn(data);
+      } else {
+        console.warn("Voice command processor not yet initialized");
+      }
+    },
+    [processVoiceCommandFn]
+  );
+
+  const toggleDirectionsSidebar = () => {
+    setShowDirections(!showDirections);
+  };
+
+  const toggleDirectionsInputSidebar = () => {
+    setShowDirectionsInput(!showDirectionsInput);
+    // Close directions sidebar when opening input sidebar
+    if (!showDirectionsInput && showDirections) {
+      setShowDirections(false);
+    }
+  };
+
+  const clearDirections = () => {
+    if (processVoiceCommandFn) {
+      processVoiceCommandFn({ command: "clear_directions" });
+    }
+    setDirectionsData(null);
+    setShowDirections(false);
+  };
+
+  // Function to update directions data from MapView
+  const updateDirectionsData = useCallback((data) => {
+    setDirectionsData(data);
+    setShowDirections(true);
+  }, []);
+
+  // Function to handle get directions request from DirectionsInputSidebar
+  const handleGetDirections = async (data) => {
+    if (processVoiceCommandFn) {
+      await processVoiceCommandFn(data);
+    }
+  };
+
+  return (
+    <div className="relative w-screen h-screen">
+      {/* Map Component */}
+      <MapView 
+        position={position} 
+        setProcessVoiceCommand={setProcessVoiceCommandFn}
+        updateDirectionsData={updateDirectionsData}
+      />
+
+      {/* Search Bar (Top Left Corner) */}
+      <div ref={searchRef} className={`absolute top-4 left-4 bg-white p-3 rounded-lg shadow-md flex items-center w-full max-w-md z-50 transition-opacity duration-300 ${
+    (showDirectionsInput) ? "opacity-0 pointer-events-none" : "opacity-100"
+  }`}>
+        <form onSubmit={handleSearch} className="flex w-full">
+          {/* Input Field */}
+          <input
+            ref={inputRef}
+            type="text"
+            placeholder="Search..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="w-full bg-transparent outline-none text-gray-700 placeholder-gray-400 px-3"
+            onFocus={() => query.length >= 3 && setShowSuggestions(true)}
+          />
+
+          {/* Search Button */}
+          <button type="submit" className="text-gray-500 hover:text-gray-700 px-3" title="Search">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              className="w-5 h-5"
+            >
+              <path
+                fillRule="evenodd"
+                d="M10.5 3.75a6.75 6.75 0 1 0 0 13.5 6.75 6.75 0 0 0 0-13.5ZM2.25 10.5a8.25 8.25 0 1 1 14.59 5.28l4.69 4.69a.75.75 0 1 1-1.06 1.06l-4.69-4.69A8.25 8.25 0 0 1 2.25 10.5Z"
+                clipRule="evenodd"
+              />
+            </svg>
+          </button>
+          
+          <AudioRecorder onTranscription={handleVoiceCommand} />
+
+          {/* Directions Request Button - to open the directions input sidebar */}
+          <button 
+            type="button" 
+            onClick={toggleDirectionsInputSidebar}
+            className={`text-gray-500 hover:text-gray-700 px-3 ${showDirectionsInput ? 'text-blue-500' : ''}`}
+            title="Get directions"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className={`w-5 h-5 ${showDirectionsInput ? 'text-blue-500' : 'text-gray-500'}`}>
+              <path fill-rule="evenodd" d="M13.9439774,2.73116957 L14.0855382,2.86385819 L21.1361418,9.91446183 C22.2879527,11.0662728 22.2879527,12.9337272 21.1361418,14.0855382 L14.0855382,21.1361418 C12.9337272,22.2879527 11.0662728,22.2879527 9.91446183,21.1361418 L2.86385819,14.0855382 C1.71204727,12.9337272 1.71204727,11.0662728 2.86385819,9.91446183 L9.91446183,2.86385819 C11.0202003,1.75811971 12.7854759,1.71389017 13.9439774,2.73116957 Z M11.3286754,4.27807176 L4.27807176,11.3286754 C3.90730941,11.6994377 3.90730941,12.3005623 4.27807176,12.6713246 L11.3286754,19.7219282 C11.6994377,20.0926906 12.3005623,20.0926906 12.6713246,19.7219282 L19.7219282,12.6713246 C20.0926906,12.3005623 20.0926906,11.6994377 19.7219282,11.3286754 L12.6864633,4.29321048 L12.6243321,4.23401232 C12.2514817,3.9066126 11.6827715,3.92397563 11.3286754,4.27807176 Z M13.6128994,9.20970461 L13.7071068,9.29289322 L15.7071068,11.2928932 C16.0675907,11.6533772 16.0953203,12.2206082 15.7902954,12.6128994 L15.7071068,12.7071068 L13.7071068,14.7071068 C13.3165825,15.0976311 12.6834175,15.0976311 12.2928932,14.7071068 C11.9324093,14.3466228 11.9046797,13.7793918 12.2097046,13.3871006 L12.2928932,13.2928932 L12.584,13 L10,13 L10,14 C10,14.5522847 9.55228475,15 9,15 C8.48716416,15 8.06449284,14.6139598 8.00672773,14.1166211 L8,14 L8,12 C8,11.4871642 8.38604019,11.0644928 8.88337887,11.0067277 L9,11 L12.585,11 L12.2928932,10.7071068 C11.9324093,10.3466228 11.9046797,9.77939176 12.2097046,9.38710056 L12.2928932,9.29289322 C12.6533772,8.93240926 13.2206082,8.90467972 13.6128994,9.20970461 Z" />
+            </svg>
+          </button>
+
+          {/* Directions Toggle Button - only when directions exist*/}
+          {directionsData && (
+            <button 
+              type="button" 
+              onClick={toggleDirectionsSidebar}
+              className={`text-gray-500 hover:text-gray-700 px-3 ${directionsData ? 'text-blue-500' : ''}`}
+              // disabled={!directionsData}
+              title={showDirections ? "Hide directions" : "Show directions"}
+            >
+              <svg 
+                className={`w-5 h-5 ${directionsData ? 'text-blue-500 hover:text-blue-700' : 'text-gray-400'} transition-colors duration-200`}
+                aria-hidden="true"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none" 
+                viewBox="0 0 14 10"
+              >
+                <path 
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2.5"
+                  d="M1 5h12m0 0L9 1m4 4L9 9" 
+                />
+              </svg>
+            </button>
+          )}
+
+          {/* Clear Directions Button (only visible when directions exist) */}
+          {directionsData && (
+            <button 
+              type="button" 
+              onClick={clearDirections}
+              className="text-red-500 hover:text-red-700 px-3"
+              title="Clear Directions"
+            >
+              <svg 
+                xmlns="http://www.w3.org/2000/svg" 
+                viewBox="0 0 24 24" 
+                fill="currentColor" 
+                className="w-5 h-5"
+              >
+                <path 
+                  fillRule="evenodd" 
+                  d="M5.47 5.47a.75.75 0 0 1 1.06 0L12 10.94l5.47-5.47a.75.75 0 1 1 1.06 1.06L13.06 12l5.47 5.47a.75.75 0 1 1-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 0 1-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 0 1 0-1.06Z" 
+                  clipRule="evenodd" 
+                />
+              </svg>
+            </button>
+          )}
+        </form>
+
+        {/* Suggestions Dropdown */}
+        {showSuggestions && suggestions.length > 0 && (
+          <div className="absolute top-full left-0 w-full mt-1 bg-white rounded-md shadow-lg z-50 max-h-64 overflow-y-auto">
+            {suggestions.map((suggestion, index) => (
+              <div
+                key={index}
+                className="px-4 py-2 hover:bg-gray-100 cursor-pointer flex items-start"
+                onClick={() => handleSuggestionClick(suggestion)}
+              >
+                <svg 
+                  className="w-5 h-5 mr-2 text-gray-500 mt-0.5 flex-shrink-0" 
+                  fill="none" 
+                  stroke="currentColor" 
+                  viewBox="0 0 24 24" 
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round" 
+                    strokeWidth="2" 
+                    d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+                  ></path>
+                  <path 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round" 
+                    strokeWidth="2" 
+                    d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+                  ></path>
+                </svg>
+                <div className="truncate">
+                  <div className="font-medium">{suggestion.display_name.split(',')[0]}</div>
+                  <div className="text-xs text-gray-500 truncate">{suggestion.display_name}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Directions Input Sidebar - for entering from/to locations */}
+      <DirectionsInputSidebar 
+        isOpen={showDirectionsInput}
+        onClose={toggleDirectionsInputSidebar}
+        onGetDirections={handleGetDirections}
+        currentLocation={currentLocation}
+        geocodeApiKey={API_KEY}
+      />
+
+      {/* Directions Sidebar - only visible when showDirections is true and directionsData exists */}
+      {showDirections && directionsData && (
+        <DirectionsSidebar 
+          directions={directionsData} 
+          onClose={toggleDirectionsSidebar}
+          onClear={clearDirections}
+        />
+      )}
+    </div>
+  );
+}
+
+export default SearchBar;
